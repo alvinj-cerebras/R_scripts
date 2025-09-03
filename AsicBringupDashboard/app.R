@@ -6,6 +6,7 @@ library(pool)
 library(tidyverse)
 library(scales)
 library(ggTimeSeries)
+library(plotly)
 
 # Set up the DB pool for CBDA queries
 cbdaPool <- dbPool(
@@ -67,17 +68,18 @@ generateYieldData <- function(runs) {
     count(name = "Starts", startWW) %>% rename('WW' = 'startWW')
   
   # compute the FPY
-  yields <- yields %>% rename(stopWW = WW) %>% left_join(runs %>% filter(start_step == 'update_cfg_mcd', stop_step == 'git_commit', status == 'pass') %>%
+  yields <- yields %>% rename(stopWW = WW) %>% left_join(by = join_by(stopWW), runs %>% filter(start_step == 'update_cfg_mcd', stop_step == 'git_commit', status == 'pass') %>%
                                                            group_by(name) %>% slice(which.max(run_start_ts)) %>% group_by(stopWW) %>%
                                                            count(name = "FP", stopWW)) %>% rename('WW' = 'stopWW')
   yields <- yields %>% mutate('FPY' = FP / Starts)
   
   # compute the LPY
-  yields <- yields %>% rename(stopWW = WW) %>% left_join(runs %>% filter(status == 'pass', stop_step == 'git_commit') %>%
+  yields <- yields %>% rename(stopWW = WW) %>% left_join(by = join_by(stopWW), runs %>% filter(status == 'pass', stop_step == 'git_commit') %>%
                                                            group_by(name) %>% slice(which.max(run_stop_ts)) %>% group_by(stopWW) %>%
                                                            count(name = 'LP', stopWW)) %>% rename('WW' = 'stopWW')
   yields <- yields %>% mutate('LPY' = LP / Starts)
-  yields <- yields %>% mutate_all(list(~ replace_na(., 0)))
+  yields <- yields %>% mutate_at(vars(-group_cols()), list(~ replace_na(., 0)))
+  #yields <- yields %>% mutate_all(list(~ replace_na(., 0)))
   
   # longer the data for plotting
   yields_long <- yields %>% select(WW, FPY, LPY) %>% gather('FPY', 'LPY', key = 'Yield', value = 'Stat')
