@@ -2,6 +2,10 @@
 
 library(shiny)
 library(shinydashboard)
+library(pool)
+library(tidyverse)
+library(scales)
+library(ggTimeSeries)
 
 # Set up the DB pool for CBDA queries
 cbdaPool <- dbPool(
