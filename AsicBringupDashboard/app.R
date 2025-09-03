@@ -18,7 +18,6 @@ cbdaPool <- dbPool(
 )
 
 cbdaFetch <- function() {
-  print('Fetching')
   # Fetch the run data from the db
   dbGetQuery(cbdaPool,
   "select s.name, r.location, r.test_software_version, r.run_start_ts, r.run_stop_ts, r.status, r.run_type, r.errors[1], r.warnings[1] as start_step, r.warnings[2] as stop_step, r.jenkins_url
@@ -119,7 +118,7 @@ plotFailStepsByVersion <- function(runs,
 }
 
 plotStartsPerDayByVersion <- function(runs,
-                                      yielData) {
+                                      yieldData) {
   runs %>% filter(grepl('bringup_automation_sdr-', test_software_version)) %>% group_by(name) %>% slice(which.min(run_start_ts)) %>%
     group_by(version) %>% count(run_start_date) %>%
     ggplot(aes(x = run_start_date, y = n, group = version, color = version)) +
@@ -181,7 +180,8 @@ ui <- dashboardPage(
                                 'FPY Run-time by Test Version' = 8),
                  selected = 6),
     actionButton('fetchButton',
-                 'Update Data')
+                 'Update Data'),
+    width = 300
   ),
   dashboardBody(
     fluidRow(
@@ -190,9 +190,20 @@ ui <- dashboardPage(
   )
 )
 
-# Define server logic required to draw a histogram
-server <- function(input, output, session) {
-  # list of plots im the same order as the UI radio buttons
+fetchData <- function() {
+  runData <- cbdaFetch()
+  runData <- polishRunData(runData)
+  yieldData <- generateYieldData(runData)
+  
+  return(list(runData = runData,
+              yieldData = yieldData))
+}
+
+fetchAndPlot <- function(plotIndex,
+                         output) {
+  fetchedData <- reactiveVal(NULL)
+
+  # list of plots in the same order as the UI radio buttons
   plotFuncs <- list(plotFpyFailSteps,
                     plotFailStepsByWW,
                     plotFailStepsByVersion,
@@ -201,19 +212,29 @@ server <- function(input, output, session) {
                     plotFpyLpy,
                     plotStartsByWeekDay,
                     plotRuntimeByVersion)
-  # grab the data and polish it up
-  runData <- cbdaFetch()
-  runData <- polishRunData(runData)
-  yieldData <- generateYieldData(runData)
-  observeEvent(input$fetchButton, {
-    runData <- cbdaFetch()
-    runData <- polishRunData(runData)
-    yieldData <- generateYieldData(runData)
+
+  fetchedData <- fetchData()
+  output$MainPlot <- renderPlot(
+    plotFuncs[[as.integer(plotIndex)]](fetchedData$runData,
+                                       fetchedData$yieldData),
+    height = 700)
+}
+
+# Define server logic required to draw a histogram
+server <- function(input, output, session) {
+  # Get the initial data
+  fetchAndPlot(input$chartSelect,
+               output)
+  
+  trigger <- reactive({
+    list(input$fetchButton,
+         input$chartSelect)
   })
   
-  # Make the plots
-  output$MainPlot <- renderPlot(plotFuncs[[as.integer(input$chartSelect)]](runData, yieldData),
-                                height = 700)
+  observeEvent(trigger(), {
+    fetchAndPlot(input$chartSelect,
+                 output)
+  })
 }
 
 # Run the application 
