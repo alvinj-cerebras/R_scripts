@@ -2,11 +2,14 @@
 
 library(shiny)
 library(shinydashboard)
+library(RPostgres)
 library(pool)
 library(tidyverse)
 library(scales)
 library(ggTimeSeries)
 library(plotly)
+library(glue)
+library(lubridate)
 
 # Set up the DB pool for CBDA queries
 cbdaPool <- dbPool(
@@ -18,14 +21,35 @@ cbdaPool <- dbPool(
   password = 'writer3896'
 )
 
-cbdaFetch <- function() {
+onStop(function() {
+  poolClose(cbdaPool)
+})
+
+cbdaFetch <- function(lookback) {
   # Fetch the run data from the db
-  dbGetQuery(cbdaPool,
-  "select s.name, r.location, r.test_software_version, r.run_start_ts, r.run_stop_ts, r.status, r.run_type, r.errors[1], r.warnings[1] as start_step, r.warnings[2] as stop_step, r.jenkins_url
- from system as s, system_bring_up_run as r
- where r.system_id = s.system_id and r.job_name = 'asic_bringup' and r.run_start_ts > now() - interval '5 week'
- order by run_stop_ts desc
-")
+  weeksBack = DBI::SQL(lookback)
+  q_string <- glue::glue_sql("select s.name,
+                                     r.location,
+                                     r.test_software_version,
+                                     r.run_start_ts,
+                                     r.run_stop_ts,
+                                     r.status,
+                                     r.run_type,
+                                     r.errors[1]::text as errors,
+                                     r.warnings[1]::text as start_step,
+                                     r.warnings[2]::text as stop_step,
+                                     r.jenkins_url
+                              from \"system\" as s,
+                                   system_bring_up_run as r
+                              where r.system_id = s.system_id and
+                                    r.job_name = 'asic_bringup' and
+                                    r.run_start_ts > now() - interval '{weeksBack} weeks'
+                              order by run_stop_ts desc",
+                             .con = cbdaPool,
+                             weeksBack = weeksBack
+                             )
+    dbGetQuery(cbdaPool,
+             q_string)
 }
 
 polishRunData <- function(runs) {
@@ -40,7 +64,8 @@ polishRunData <- function(runs) {
                                    'wafer_diag_1','wafer_diag_2', 'wafer_diag_0', 'wafer_diag_5',
                                    'over_repair',
                                    'git_commit',
-                                   'stall_repair'
+                                   'stall_repair',
+                                   'MISSING'
                         ))
   runs <- runs %>% rename(Step = errors)
   runs$status <- factor(runs$status,
@@ -54,7 +79,7 @@ polishRunData <- function(runs) {
   runs <- runs %>% filter(grepl('.*_bringup', location))
   runs$version <- str_extract(runs$test_software_version, 'bringup_automation_sdr-([0-9.]+)', group = 1)
   
-  runs
+  return(runs)
 }
 
 generateYieldData <- function(runs) {
@@ -83,6 +108,8 @@ generateYieldData <- function(runs) {
   
   # longer the data for plotting
   yields_long <- yields %>% select(WW, FPY, LPY) %>% gather('FPY', 'LPY', key = 'Yield', value = 'Stat')
+  
+  return(yields_long)
 }
 
 plotFpyFailSteps <- function(runs,
@@ -183,6 +210,12 @@ ui <- dashboardPage(
                  selected = 6),
     actionButton('fetchButton',
                  'Update Data'),
+    sliderInput(inputId = 'lookback',
+                label = 'Weeks of data to pull',
+                min = 1,
+                max = 12,
+                value = 5,
+                step = 1),
     width = 300
   ),
   dashboardBody(
@@ -192,8 +225,8 @@ ui <- dashboardPage(
   )
 )
 
-fetchData <- function() {
-  runData <- cbdaFetch()
+fetchData <- function(lookback) {
+  runData <- cbdaFetch(lookback)
   runData <- polishRunData(runData)
   yieldData <- generateYieldData(runData)
   
@@ -202,9 +235,8 @@ fetchData <- function() {
 }
 
 fetchAndPlot <- function(plotIndex,
+                         lookback,
                          output) {
-  fetchedData <- reactiveVal(NULL)
-
   # list of plots in the same order as the UI radio buttons
   plotFuncs <- list(plotFpyFailSteps,
                     plotFailStepsByWW,
@@ -215,7 +247,7 @@ fetchAndPlot <- function(plotIndex,
                     plotStartsByWeekDay,
                     plotRuntimeByVersion)
 
-  fetchedData <- fetchData()
+  fetchedData <- fetchData(lookback)
   output$MainPlot <- renderPlot(
     plotFuncs[[as.integer(plotIndex)]](fetchedData$runData,
                                        fetchedData$yieldData),
@@ -225,16 +257,19 @@ fetchAndPlot <- function(plotIndex,
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
   # Get the initial data
-  fetchAndPlot(input$chartSelect,
-               output)
+  #fetchAndPlot(input$chartSelect,
+  #             as.integer(input$lookback),
+  #             output)
   
   trigger <- reactive({
     list(input$fetchButton,
-         input$chartSelect)
-  })
+         input$chartSelect,
+         input$lookback)
+  }) %>% debounce(500)
   
   observeEvent(trigger(), {
     fetchAndPlot(input$chartSelect,
+                 input$lookback,
                  output)
   })
 }
