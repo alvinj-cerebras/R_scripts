@@ -130,7 +130,7 @@ runs %>% filter(grepl('bringup_automation_sdr-', test_software_version), Step !=
   geom_col() +
   facet_wrap(~ version) +
   labs(
-    title = "Weighted Distribution of Steps per Test Software Version",
+    title = "Weighted Distribution of Fail Steps per Test Software Version",
     subtitle = Sys.time(),
     x = "Step",
     y = "Proportion"

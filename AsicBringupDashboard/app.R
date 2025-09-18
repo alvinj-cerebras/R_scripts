@@ -156,7 +156,7 @@ plotWeigthedFailStepsByVersion <- function(runs,
     geom_col() +
     facet_wrap(~ version) +
     labs(
-      title = "Weighted Distribution of Steps per Test Software Version",
+      title = "Weighted Distribution of Fail Steps per Test Software Version",
       subtitle = Sys.time(),
       x = "Step",
       y = "Proportion"
