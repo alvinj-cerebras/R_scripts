@@ -146,6 +146,28 @@ plotFailStepsByVersion <- function(runs,
     scale_y_continuous(labels = function(x) as.integer(round(x, 0)))
 }
 
+plotWeigthedFailStepsByVersion <- function(runs,
+                                           yieldData) {
+  runs %>% filter(grepl('bringup_automation_sdr-', test_software_version), Step != "NA") %>%
+    count(version, Step) %>%
+    group_by(version) %>%
+    mutate(proportion = n / sum(n)) %>%
+    ggplot(aes(x = Step, fill = Step, y = proportion)) +
+    geom_col() +
+    facet_wrap(~ version) +
+    labs(
+      title = "Weighted Distribution of Steps per Test Software Version",
+      subtitle = Sys.time(),
+      x = "Step",
+      y = "Proportion"
+    ) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    theme(
+      text = element_text(size = 18),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    )
+}
+
 plotStartsPerDayByVersion <- function(runs,
                                       yieldData) {
   runs %>% filter(grepl('bringup_automation_sdr-', test_software_version)) %>% group_by(name) %>% slice(which.min(run_start_ts)) %>%
@@ -202,12 +224,13 @@ ui <- dashboardPage(
                  choices = list('FPY Failure Step Counts by WW' = 1,
                                 'Count of Failure Steps by WW' = 2,
                                 'Count of Failure Steps by Test Version' = 3,
-                                'Starts per Day by Test Version' = 4,
-                                'Starts per WW by Site' = 5,
-                                'FPY and LPY' = 6,
-                                'System Starts by Weekday' = 7,
-                                'FPY Run-time by Test Version' = 8),
-                 selected = 6),
+                                'Weighted Failure Steps by Test Version' = 4,
+                                'Starts per Day by Test Version' = 5,
+                                'Starts per WW by Site' = 6,
+                                'FPY and LPY' = 7,
+                                'System Starts by Weekday' = 8,
+                                'FPY Run-time by Test Version' = 9),
+                 selected = 7),
     actionButton('fetchButton',
                  'Update Data'),
     sliderInput(inputId = 'lookback',
@@ -241,6 +264,7 @@ fetchAndPlot <- function(plotIndex,
   plotFuncs <- list(plotFpyFailSteps,
                     plotFailStepsByWW,
                     plotFailStepsByVersion,
+                    plotWeigthedFailStepsByVersion,
                     plotStartsPerDayByVersion,
                     plotStartsPerWW,
                     plotFpyLpy,

@@ -122,6 +122,26 @@ runs %>% filter(grepl('bringup_automation_sdr-', test_software_version)) %>%
 )
 
 plotme(
+runs %>% filter(grepl('bringup_automation_sdr-', test_software_version), Step != "NA") %>%
+  count(version, Step) %>%
+  group_by(version) %>%
+  mutate(proportion = n / sum(n)) %>%
+  ggplot(aes(x = Step, fill = Step, y = proportion)) +
+  geom_col() +
+  facet_wrap(~ version) +
+  labs(
+    title = "Weighted Distribution of Steps per Test Software Version",
+    subtitle = Sys.time(),
+    x = "Step",
+    y = "Proportion"
+    ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    )
+)
+
+plotme(
 runs %>% filter(grepl('bringup_automation_sdr-', test_software_version)) %>% group_by(name) %>% slice(which.min(run_start_ts)) %>%
   group_by(version) %>% count(run_start_date) %>%
   ggplot(aes(x = run_start_date, y = n, group = version, color = version)) +
